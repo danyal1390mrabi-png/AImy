@@ -397,6 +397,47 @@
   #afkOverlay h2{ font-size:26px; font-weight:800; color:var(--text-1); margin-bottom:8px; }
   #afkOverlay p{ color:var(--text-3); font-size:14px; }
 
+  /* ---------- Auth overlay (ورود / ثبت‌نام با کد پیامکی) ---------- */
+  #authOverlay{
+    position:fixed; inset:0; z-index:2000;
+    background:var(--bg);
+    display:none; align-items:center; justify-content:center;
+    padding:20px; text-align:center;
+  }
+  #authOverlay.active{ display:flex; }
+  .auth-card{
+    width:100%; max-width:380px;
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg);
+    padding:28px 24px; display:flex; flex-direction:column; gap:16px;
+  }
+  .auth-logo{ width:52px; height:52px; border-radius:14px; object-fit:cover; margin:0 auto; }
+  .auth-card h2{ font-size:19px; font-weight:800; color:var(--text-1); }
+  .auth-card p.auth-sub{ font-size:13px; color:var(--text-3); line-height:1.7; margin-top:-6px; }
+  .auth-input{
+    width:100%; padding:13px 14px; border-radius:var(--radius-md);
+    border:1px solid var(--border); background:var(--bg); color:var(--text-1);
+    font-family:inherit; font-size:15px; text-align:center; letter-spacing:1px;
+    direction:ltr;
+  }
+  .auth-input:focus{ outline:none; border-color:var(--accent); }
+  .auth-btn{
+    width:100%; padding:13px 14px; border-radius:var(--radius-md); border:none;
+    background:var(--accent); color:#fff; font-family:inherit; font-size:14.5px; font-weight:700;
+    cursor:pointer; transition:.2s;
+  }
+  .auth-btn:hover{ filter:brightness(1.06); }
+  .auth-btn:disabled{ opacity:.55; cursor:not-allowed; }
+  .auth-btn-ghost{
+    background:transparent; color:var(--text-2); border:1px solid var(--border);
+  }
+  .auth-error{ font-size:12.5px; color:var(--error); min-height:16px; }
+  .auth-resend{ font-size:12.5px; color:var(--text-3); }
+  .auth-resend button{
+    background:none; border:none; color:var(--accent); font-family:inherit;
+    font-size:12.5px; font-weight:700; cursor:pointer; padding:0;
+  }
+  .auth-resend button:disabled{ color:var(--text-3); cursor:not-allowed; }
+
   /* ---------- Mobile: sidebar becomes an off-canvas overlay ---------- */
   @media (max-width:768px){
     .sidebar{
@@ -502,6 +543,33 @@
   <span>VPN سرعت ییشتر بهبود کیفیت</span>
 </div>
 
+<div id="authOverlay">
+  <div class="auth-card">
+    <img src="icons/icon-192.png" class="auth-logo" alt="لوگو">
+
+    <div id="authPhoneStep">
+      <h2>ورود به دستیار دانیال کد</h2>
+      <p class="auth-sub">شماره موبایل خود را وارد کنید تا کد تایید برایتان پیامک شود.</p>
+      <input type="tel" id="authPhoneInput" class="auth-input" placeholder="0912xxxxxxx" inputmode="numeric" maxlength="11" autocomplete="tel">
+      <div class="auth-error" id="authPhoneError"></div>
+      <button type="button" class="auth-btn" id="authSendBtn">ارسال کد تایید</button>
+    </div>
+
+    <div id="authCodeStep" style="display:none;">
+      <h2>کد تایید را وارد کنید</h2>
+      <p class="auth-sub">کد ۶ رقمی پیامک‌شده به <span id="authPhoneDisplay"></span> را وارد کنید.</p>
+      <input type="tel" id="authCodeInput" class="auth-input" placeholder="——————" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+      <div class="auth-error" id="authCodeError"></div>
+      <button type="button" class="auth-btn" id="authVerifyBtn">تایید و ورود</button>
+      <div class="auth-resend">
+        <span id="authResendTimerText">ارسال دوباره تا <span id="authResendSeconds">60</span> ثانیه دیگر</span>
+        <button type="button" id="authResendBtn" style="display:none;">ارسال دوباره‌ی کد</button>
+      </div>
+      <button type="button" class="auth-btn auth-btn-ghost" id="authBackBtn">تغییر شماره موبایل</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
   "use strict";
@@ -571,6 +639,12 @@
     searchResultCount: 5
   };
 
+  /* =========================================================
+     تنظیمات احراز هویت (ورود با کد پیامکی)
+     ========================================================= */
+  const AUTH_ENDPOINT = "https://apiw.danyalcode.ir";
+  const LS_TOKEN = "danyalcode_ai_session_token";
+
   /* ---------------- Storage keys ----------------
      هر دستیار (هر صفحه) حافظه‌ی گفتگوی جداگانه‌ی خودش را دارد؛
      به همین دلیل کلیدهای ذخیره‌سازی بر اساس CURRENT_PAGE نام‌گذاری می‌شوند
@@ -609,12 +683,202 @@
   const voiceTranscriptEl = document.getElementById("voiceTranscript");
   const voiceCloseBtn = document.getElementById("voiceCloseBtn");
 
+  const authOverlay = document.getElementById("authOverlay");
+  const authPhoneStep = document.getElementById("authPhoneStep");
+  const authCodeStep = document.getElementById("authCodeStep");
+  const authPhoneInput = document.getElementById("authPhoneInput");
+  const authPhoneError = document.getElementById("authPhoneError");
+  const authSendBtn = document.getElementById("authSendBtn");
+  const authCodeInput = document.getElementById("authCodeInput");
+  const authCodeError = document.getElementById("authCodeError");
+  const authVerifyBtn = document.getElementById("authVerifyBtn");
+  const authPhoneDisplay = document.getElementById("authPhoneDisplay");
+  const authResendBtn = document.getElementById("authResendBtn");
+  const authResendTimerText = document.getElementById("authResendTimerText");
+  const authResendSeconds = document.getElementById("authResendSeconds");
+  const authBackBtn = document.getElementById("authBackBtn");
+
   /* ---------------- Icons ---------------- */
   const TRASH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
   const COPY_ICON  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
   const CHECK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
   const SUN_ICON   = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>';
   const MOON_ICON  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+
+  /* ---------------- Auth: ورود با کد پیامکی ---------------- */
+  let authPendingPhone = "";
+  let authResendTimer = null;
+
+  function toEnglishDigits(str){
+    return String(str || "").replace(/[۰-۹]/g, d => "۰۱۲۳۴۵۶۷۸۹".indexOf(d));
+  }
+
+  function normalizePhoneClient(raw){
+    let p = toEnglishDigits(raw).replace(/[^\d+]/g, "");
+    if(p.startsWith("+98")) p = "0" + p.slice(3);
+    else if(p.startsWith("0098")) p = "0" + p.slice(4);
+    else if(p.startsWith("98")) p = "0" + p.slice(2);
+    if(/^9\d{9}$/.test(p)) p = "0" + p;
+    return p;
+  }
+
+  function isValidIranMobile(p){
+    return /^09\d{9}$/.test(p);
+  }
+
+  function showAuthOverlay(){
+    authOverlay.classList.add("active");
+  }
+  function hideAuthOverlay(){
+    authOverlay.classList.remove("active");
+  }
+
+  function showAuthPhoneStep(){
+    authCodeStep.style.display = "none";
+    authPhoneStep.style.display = "block";
+    authCodeError.textContent = "";
+    clearInterval(authResendTimer);
+  }
+
+  function showAuthCodeStep(phone){
+    authPhoneStep.style.display = "none";
+    authCodeStep.style.display = "block";
+    authPhoneDisplay.textContent = phone;
+    authCodeInput.value = "";
+    authCodeError.textContent = "";
+    authCodeInput.focus();
+    startResendCountdown();
+  }
+
+  function startResendCountdown(){
+    let remaining = 60;
+    authResendBtn.style.display = "none";
+    authResendTimerText.style.display = "inline";
+    authResendSeconds.textContent = remaining;
+    clearInterval(authResendTimer);
+    authResendTimer = setInterval(() => {
+      remaining -= 1;
+      authResendSeconds.textContent = remaining;
+      if(remaining <= 0){
+        clearInterval(authResendTimer);
+        authResendTimerText.style.display = "none";
+        authResendBtn.style.display = "inline";
+      }
+    }, 1000);
+  }
+
+  async function checkSession(token){
+    try{
+      const res = await fetch(AUTH_ENDPOINT + "/me", {
+        headers: { "Authorization": "Bearer " + token }
+      });
+      if(!res.ok) return false;
+      const data = await res.json();
+      return !!data.ok;
+    }catch(e){
+      return false;
+    }
+  }
+
+  async function doSendCode(){
+    const phone = normalizePhoneClient(authPhoneInput.value);
+    authPhoneError.textContent = "";
+
+    if(!isValidIranMobile(phone)){
+      authPhoneError.textContent = "شماره موبایل معتبر نیست.";
+      return;
+    }
+
+    authSendBtn.disabled = true;
+    authSendBtn.textContent = "در حال ارسال...";
+
+    try{
+      const res = await fetch(AUTH_ENDPOINT + "/send-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone })
+      });
+      const data = await res.json();
+      if(!res.ok || !data.ok){
+        authPhoneError.textContent = data.error || "ارسال کد با خطا مواجه شد.";
+        return;
+      }
+      authPendingPhone = phone;
+      showAuthCodeStep(phone);
+    }catch(e){
+      authPhoneError.textContent = "اتصال به سرور احراز هویت برقرار نشد.";
+    }finally{
+      authSendBtn.disabled = false;
+      authSendBtn.textContent = "ارسال کد تایید";
+    }
+  }
+
+  async function doVerifyCode(){
+    const code = toEnglishDigits(authCodeInput.value).replace(/\D/g, "");
+    authCodeError.textContent = "";
+
+    if(!/^\d{6}$/.test(code)){
+      authCodeError.textContent = "کد باید ۶ رقم باشد.";
+      return;
+    }
+
+    authVerifyBtn.disabled = true;
+    authVerifyBtn.textContent = "در حال بررسی...";
+
+    try{
+      const res = await fetch(AUTH_ENDPOINT + "/verify-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: authPendingPhone, code })
+      });
+      const data = await res.json();
+      if(!res.ok || !data.ok){
+        authCodeError.textContent = data.error || "کد وارد شده اشتباه است.";
+        return;
+      }
+      try{ localStorage.setItem(LS_TOKEN, data.token); }catch(e){}
+      hideAuthOverlay();
+      init();
+    }catch(e){
+      authCodeError.textContent = "اتصال به سرور احراز هویت برقرار نشد.";
+    }finally{
+      authVerifyBtn.disabled = false;
+      authVerifyBtn.textContent = "تایید و ورود";
+    }
+  }
+
+  function bindAuthEvents(){
+    authSendBtn.addEventListener("click", doSendCode);
+    authPhoneInput.addEventListener("keydown", e => { if(e.key === "Enter") doSendCode(); });
+
+    authVerifyBtn.addEventListener("click", doVerifyCode);
+    authCodeInput.addEventListener("keydown", e => { if(e.key === "Enter") doVerifyCode(); });
+
+    authResendBtn.addEventListener("click", () => {
+      authCodeError.textContent = "";
+      doSendCode();
+    });
+
+    authBackBtn.addEventListener("click", showAuthPhoneStep);
+  }
+
+  async function bootstrapAuth(){
+    bindAuthEvents();
+
+    let token;
+    try{ token = localStorage.getItem(LS_TOKEN); }catch(e){ token = null; }
+
+    if(token){
+      const valid = await checkSession(token);
+      if(valid){
+        init();
+        return;
+      }
+      try{ localStorage.removeItem(LS_TOKEN); }catch(e){}
+    }
+
+    showAuthOverlay();
+  }
 
   /* ---------------- Init ---------------- */
   function init(){
@@ -1761,7 +2025,7 @@
     resetAFK();
   }
 
-  init();
+  bootstrapAuth();
 })();
 
 if("serviceWorker" in navigator){
