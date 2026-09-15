@@ -397,7 +397,7 @@
   #afkOverlay h2{ font-size:26px; font-weight:800; color:var(--text-1); margin-bottom:8px; }
   #afkOverlay p{ color:var(--text-3); font-size:14px; }
 
-  /* ---------- Auth overlay (ورود / ثبت‌نام با کد پیامکی) ---------- */
+  /* ---------- Auth overlay (ورود / ثبت‌نام) ---------- */
   #authOverlay{
     position:fixed; inset:0; z-index:2000;
     background:var(--bg);
@@ -416,7 +416,7 @@
   .auth-input{
     width:100%; padding:13px 14px; border-radius:var(--radius-md);
     border:1px solid var(--border); background:var(--bg); color:var(--text-1);
-    font-family:inherit; font-size:15px; text-align:center; letter-spacing:1px;
+    font-family:inherit; font-size:15px; text-align:center;
     direction:ltr;
   }
   .auth-input:focus{ outline:none; border-color:var(--accent); }
@@ -431,12 +431,11 @@
     background:transparent; color:var(--text-2); border:1px solid var(--border);
   }
   .auth-error{ font-size:12.5px; color:var(--error); min-height:16px; }
-  .auth-resend{ font-size:12.5px; color:var(--text-3); }
-  .auth-resend button{
+  .auth-switch{ font-size:12.5px; color:var(--text-3); }
+  .auth-switch button{
     background:none; border:none; color:var(--accent); font-family:inherit;
     font-size:12.5px; font-weight:700; cursor:pointer; padding:0;
   }
-  .auth-resend button:disabled{ color:var(--text-3); cursor:not-allowed; }
 
   /* ---------- Mobile: sidebar becomes an off-canvas overlay ---------- */
   @media (max-width:768px){
@@ -547,25 +546,31 @@
   <div class="auth-card">
     <img src="icons/icon-192.png" class="auth-logo" alt="لوگو">
 
-    <div id="authPhoneStep">
+    <div id="authLoginStep">
       <h2>ورود به دستیار دانیال کد</h2>
-      <p class="auth-sub">شماره موبایل خود را وارد کنید تا کد تایید برایتان پیامک شود.</p>
-      <input type="tel" id="authPhoneInput" class="auth-input" placeholder="0912xxxxxxx" inputmode="numeric" maxlength="11" autocomplete="tel">
-      <div class="auth-error" id="authPhoneError"></div>
-      <button type="button" class="auth-btn" id="authSendBtn">ارسال کد تایید</button>
+      <p class="auth-sub">نام کاربری و رمز عبور خود را وارد کنید.</p>
+      <input type="text" id="loginUsernameInput" class="auth-input" placeholder="نام کاربری" autocomplete="username">
+      <input type="password" id="loginPasswordInput" class="auth-input" placeholder="رمز عبور" autocomplete="current-password">
+      <div class="auth-error" id="loginError"></div>
+      <button type="button" class="auth-btn" id="loginBtn">ورود</button>
+      <div class="auth-switch">
+        حساب کاربری ندارید؟
+        <button type="button" id="goToRegisterBtn">ثبت‌نام کنید</button>
+      </div>
     </div>
 
-    <div id="authCodeStep" style="display:none;">
-      <h2>کد تایید را وارد کنید</h2>
-      <p class="auth-sub">کد ۶ رقمی پیامک‌شده به <span id="authPhoneDisplay"></span> را وارد کنید.</p>
-      <input type="tel" id="authCodeInput" class="auth-input" placeholder="——————" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
-      <div class="auth-error" id="authCodeError"></div>
-      <button type="button" class="auth-btn" id="authVerifyBtn">تایید و ورود</button>
-      <div class="auth-resend">
-        <span id="authResendTimerText">ارسال دوباره تا <span id="authResendSeconds">60</span> ثانیه دیگر</span>
-        <button type="button" id="authResendBtn" style="display:none;">ارسال دوباره‌ی کد</button>
+    <div id="authRegisterStep" style="display:none;">
+      <h2>ثبت‌نام در دستیار دانیال کد</h2>
+      <p class="auth-sub">یک نام کاربری و رمز عبور انتخاب کنید.</p>
+      <input type="text" id="registerUsernameInput" class="auth-input" placeholder="نام کاربری (حداقل ۳ کاراکتر)" autocomplete="username">
+      <input type="password" id="registerPasswordInput" class="auth-input" placeholder="رمز عبور (حداقل ۶ کاراکتر)" autocomplete="new-password">
+      <input type="password" id="registerPasswordConfirmInput" class="auth-input" placeholder="تکرار رمز عبور" autocomplete="new-password">
+      <div class="auth-error" id="registerError"></div>
+      <button type="button" class="auth-btn" id="registerBtn">ثبت‌نام</button>
+      <div class="auth-switch">
+        قبلاً ثبت‌نام کرده‌اید؟
+        <button type="button" id="goToLoginBtn">وارد شوید</button>
       </div>
-      <button type="button" class="auth-btn auth-btn-ghost" id="authBackBtn">تغییر شماره موبایل</button>
     </div>
   </div>
 </div>
@@ -640,10 +645,11 @@
   };
 
   /* =========================================================
-     تنظیمات احراز هویت (ورود با کد پیامکی)
+     تنظیمات احراز هویت (ورود / ثبت‌نام با نام کاربری و رمز عبور)
      ========================================================= */
   const AUTH_ENDPOINT = "https://apiw.danyalcode.ir";
   const LS_TOKEN = "danyalcode_ai_session_token";
+  const LS_USERNAME = "danyalcode_ai_session_username";
 
   /* ---------------- Storage keys ----------------
      هر دستیار (هر صفحه) حافظه‌ی گفتگوی جداگانه‌ی خودش را دارد؛
@@ -684,19 +690,21 @@
   const voiceCloseBtn = document.getElementById("voiceCloseBtn");
 
   const authOverlay = document.getElementById("authOverlay");
-  const authPhoneStep = document.getElementById("authPhoneStep");
-  const authCodeStep = document.getElementById("authCodeStep");
-  const authPhoneInput = document.getElementById("authPhoneInput");
-  const authPhoneError = document.getElementById("authPhoneError");
-  const authSendBtn = document.getElementById("authSendBtn");
-  const authCodeInput = document.getElementById("authCodeInput");
-  const authCodeError = document.getElementById("authCodeError");
-  const authVerifyBtn = document.getElementById("authVerifyBtn");
-  const authPhoneDisplay = document.getElementById("authPhoneDisplay");
-  const authResendBtn = document.getElementById("authResendBtn");
-  const authResendTimerText = document.getElementById("authResendTimerText");
-  const authResendSeconds = document.getElementById("authResendSeconds");
-  const authBackBtn = document.getElementById("authBackBtn");
+  const authLoginStep = document.getElementById("authLoginStep");
+  const authRegisterStep = document.getElementById("authRegisterStep");
+
+  const loginUsernameInput = document.getElementById("loginUsernameInput");
+  const loginPasswordInput = document.getElementById("loginPasswordInput");
+  const loginError = document.getElementById("loginError");
+  const loginBtn = document.getElementById("loginBtn");
+  const goToRegisterBtn = document.getElementById("goToRegisterBtn");
+
+  const registerUsernameInput = document.getElementById("registerUsernameInput");
+  const registerPasswordInput = document.getElementById("registerPasswordInput");
+  const registerPasswordConfirmInput = document.getElementById("registerPasswordConfirmInput");
+  const registerError = document.getElementById("registerError");
+  const registerBtn = document.getElementById("registerBtn");
+  const goToLoginBtn = document.getElementById("goToLoginBtn");
 
   /* ---------------- Icons ---------------- */
   const TRASH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
@@ -705,26 +713,7 @@
   const SUN_ICON   = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>';
   const MOON_ICON  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
 
-  /* ---------------- Auth: ورود با کد پیامکی ---------------- */
-  let authPendingPhone = "";
-  let authResendTimer = null;
-
-  function toEnglishDigits(str){
-    return String(str || "").replace(/[۰-۹]/g, d => "۰۱۲۳۴۵۶۷۸۹".indexOf(d));
-  }
-
-  function normalizePhoneClient(raw){
-    let p = toEnglishDigits(raw).replace(/[^\d+]/g, "");
-    if(p.startsWith("+98")) p = "0" + p.slice(3);
-    else if(p.startsWith("0098")) p = "0" + p.slice(4);
-    else if(p.startsWith("98")) p = "0" + p.slice(2);
-    if(/^9\d{9}$/.test(p)) p = "0" + p;
-    return p;
-  }
-
-  function isValidIranMobile(p){
-    return /^09\d{9}$/.test(p);
-  }
+  /* ---------------- Auth: ورود / ثبت‌نام با نام کاربری و رمز عبور ---------------- */
 
   function showAuthOverlay(){
     authOverlay.classList.add("active");
@@ -733,38 +722,21 @@
     authOverlay.classList.remove("active");
   }
 
-  function showAuthPhoneStep(){
-    authCodeStep.style.display = "none";
-    authPhoneStep.style.display = "block";
-    authCodeError.textContent = "";
-    clearInterval(authResendTimer);
+  function showLoginStep(){
+    authRegisterStep.style.display = "none";
+    authLoginStep.style.display = "block";
+    loginError.textContent = "";
   }
 
-  function showAuthCodeStep(phone){
-    authPhoneStep.style.display = "none";
-    authCodeStep.style.display = "block";
-    authPhoneDisplay.textContent = phone;
-    authCodeInput.value = "";
-    authCodeError.textContent = "";
-    authCodeInput.focus();
-    startResendCountdown();
+  function showRegisterStep(){
+    authLoginStep.style.display = "none";
+    authRegisterStep.style.display = "block";
+    registerError.textContent = "";
   }
 
-  function startResendCountdown(){
-    let remaining = 60;
-    authResendBtn.style.display = "none";
-    authResendTimerText.style.display = "inline";
-    authResendSeconds.textContent = remaining;
-    clearInterval(authResendTimer);
-    authResendTimer = setInterval(() => {
-      remaining -= 1;
-      authResendSeconds.textContent = remaining;
-      if(remaining <= 0){
-        clearInterval(authResendTimer);
-        authResendTimerText.style.display = "none";
-        authResendBtn.style.display = "inline";
-      }
-    }, 1000);
+  function isValidUsername(u){
+    // فقط حروف انگلیسی، عدد، نقطه، آندرلاین و خط تیره — حداقل ۳ کاراکتر
+    return /^[a-zA-Z0-9_.-]{3,32}$/.test(u);
   }
 
   async function checkSession(token){
@@ -780,86 +752,105 @@
     }
   }
 
-  async function doSendCode(){
-    const phone = normalizePhoneClient(authPhoneInput.value);
-    authPhoneError.textContent = "";
+  async function doLogin(){
+    const username = loginUsernameInput.value.trim();
+    const password = loginPasswordInput.value;
+    loginError.textContent = "";
 
-    if(!isValidIranMobile(phone)){
-      authPhoneError.textContent = "شماره موبایل معتبر نیست.";
+    if(!isValidUsername(username)){
+      loginError.textContent = "نام کاربری نامعتبر است.";
+      return;
+    }
+    if(!password){
+      loginError.textContent = "رمز عبور را وارد کنید.";
       return;
     }
 
-    authSendBtn.disabled = true;
-    authSendBtn.textContent = "در حال ارسال...";
+    loginBtn.disabled = true;
+    loginBtn.textContent = "در حال ورود...";
 
     try{
-      const res = await fetch(AUTH_ENDPOINT + "/send-code", {
+      const res = await fetch(AUTH_ENDPOINT + "/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone })
+        body: JSON.stringify({ username, password })
       });
       const data = await res.json();
       if(!res.ok || !data.ok){
-        authPhoneError.textContent = data.error || "ارسال کد با خطا مواجه شد.";
+        loginError.textContent = data.error || "نام کاربری یا رمز عبور اشتباه است.";
         return;
       }
-      authPendingPhone = phone;
-      showAuthCodeStep(phone);
-    }catch(e){
-      authPhoneError.textContent = "اتصال به سرور احراز هویت برقرار نشد.";
-    }finally{
-      authSendBtn.disabled = false;
-      authSendBtn.textContent = "ارسال کد تایید";
-    }
-  }
-
-  async function doVerifyCode(){
-    const code = toEnglishDigits(authCodeInput.value).replace(/\D/g, "");
-    authCodeError.textContent = "";
-
-    if(!/^\d{6}$/.test(code)){
-      authCodeError.textContent = "کد باید ۶ رقم باشد.";
-      return;
-    }
-
-    authVerifyBtn.disabled = true;
-    authVerifyBtn.textContent = "در حال بررسی...";
-
-    try{
-      const res = await fetch(AUTH_ENDPOINT + "/verify-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: authPendingPhone, code })
-      });
-      const data = await res.json();
-      if(!res.ok || !data.ok){
-        authCodeError.textContent = data.error || "کد وارد شده اشتباه است.";
-        return;
-      }
-      try{ localStorage.setItem(LS_TOKEN, data.token); }catch(e){}
+      try{
+        localStorage.setItem(LS_TOKEN, data.token);
+        localStorage.setItem(LS_USERNAME, username);
+      }catch(e){}
       hideAuthOverlay();
       init();
     }catch(e){
-      authCodeError.textContent = "اتصال به سرور احراز هویت برقرار نشد.";
+      loginError.textContent = "اتصال به سرور احراز هویت برقرار نشد.";
     }finally{
-      authVerifyBtn.disabled = false;
-      authVerifyBtn.textContent = "تایید و ورود";
+      loginBtn.disabled = false;
+      loginBtn.textContent = "ورود";
+    }
+  }
+
+  async function doRegister(){
+    const username = registerUsernameInput.value.trim();
+    const password = registerPasswordInput.value;
+    const passwordConfirm = registerPasswordConfirmInput.value;
+    registerError.textContent = "";
+
+    if(!isValidUsername(username)){
+      registerError.textContent = "نام کاربری باید ۳ تا ۳۲ کاراکتر و شامل حروف انگلیسی، عدد، نقطه، خط تیره یا آندرلاین باشد.";
+      return;
+    }
+    if(!password || password.length < 6){
+      registerError.textContent = "رمز عبور باید حداقل ۶ کاراکتر باشد.";
+      return;
+    }
+    if(password !== passwordConfirm){
+      registerError.textContent = "رمز عبور و تکرار آن یکسان نیستند.";
+      return;
+    }
+
+    registerBtn.disabled = true;
+    registerBtn.textContent = "در حال ثبت‌نام...";
+
+    try{
+      const res = await fetch(AUTH_ENDPOINT + "/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if(!res.ok || !data.ok){
+        registerError.textContent = data.error || "ثبت‌نام با خطا مواجه شد. شاید این نام کاربری قبلاً گرفته شده باشد.";
+        return;
+      }
+      try{
+        localStorage.setItem(LS_TOKEN, data.token);
+        localStorage.setItem(LS_USERNAME, username);
+      }catch(e){}
+      hideAuthOverlay();
+      init();
+    }catch(e){
+      registerError.textContent = "اتصال به سرور احراز هویت برقرار نشد.";
+    }finally{
+      registerBtn.disabled = false;
+      registerBtn.textContent = "ثبت‌نام";
     }
   }
 
   function bindAuthEvents(){
-    authSendBtn.addEventListener("click", doSendCode);
-    authPhoneInput.addEventListener("keydown", e => { if(e.key === "Enter") doSendCode(); });
+    loginBtn.addEventListener("click", doLogin);
+    loginPasswordInput.addEventListener("keydown", e => { if(e.key === "Enter") doLogin(); });
+    loginUsernameInput.addEventListener("keydown", e => { if(e.key === "Enter") loginPasswordInput.focus(); });
 
-    authVerifyBtn.addEventListener("click", doVerifyCode);
-    authCodeInput.addEventListener("keydown", e => { if(e.key === "Enter") doVerifyCode(); });
+    registerBtn.addEventListener("click", doRegister);
+    registerPasswordConfirmInput.addEventListener("keydown", e => { if(e.key === "Enter") doRegister(); });
 
-    authResendBtn.addEventListener("click", () => {
-      authCodeError.textContent = "";
-      doSendCode();
-    });
-
-    authBackBtn.addEventListener("click", showAuthPhoneStep);
+    goToRegisterBtn.addEventListener("click", showRegisterStep);
+    goToLoginBtn.addEventListener("click", showLoginStep);
   }
 
   async function bootstrapAuth(){
@@ -874,9 +865,10 @@
         init();
         return;
       }
-      try{ localStorage.removeItem(LS_TOKEN); }catch(e){}
+      try{ localStorage.removeItem(LS_TOKEN); localStorage.removeItem(LS_USERNAME); }catch(e){}
     }
 
+    showLoginStep();
     showAuthOverlay();
   }
 
